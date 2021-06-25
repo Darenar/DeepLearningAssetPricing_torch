@@ -1,4 +1,4 @@
-from typing import List, Union, Tuple
+from typing import List
 
 import torch
 
@@ -6,10 +6,6 @@ import torch
 class RecurrentNetwork(torch.nn.Module):
     def __init__(self, model_name: str, input_size: int, hidden_size: int, num_layers: int = 1,
                  input_dropout: float = 0., output_dropout: float = 0.):
-        """
-        In the constructor we instantiate two nn.Linear modules and assign them as
-        member variables.
-        """
         super(RecurrentNetwork, self).__init__()
         self._input_dropout_val = input_dropout
         self.input_dropout = torch.nn.Dropout(input_dropout)
@@ -18,7 +14,8 @@ class RecurrentNetwork(torch.nn.Module):
             "input_size": input_size,
             "hidden_size": hidden_size,
             "num_layers": num_layers,
-            "dropout": output_dropout
+            "dropout": output_dropout,
+            "batch_first": True
         }
         if model_name == 'rnn':
             self.recurrent_layer = torch.nn.RNN(**parameters)
@@ -29,11 +26,11 @@ class RecurrentNetwork(torch.nn.Module):
         else:
             raise ValueError(f"Model name is unknown {model_name}")
 
-    def forward(self, input_tensor: torch.Tensor) -> torch.Tensor:
+    def forward(self, input_tensor: torch.Tensor, hidden_state: torch.Tensor) -> torch.Tensor:
         if self._input_dropout_val:
             input_tensor = self.input_dropout(input_tensor)
-        input_tensor, hidden_state = self.recurrent_layer(input_tensor)
-        self.save_hidden_state(hidden_state)
+        input_tensor, hidden_state = self.recurrent_layer(input_tensor, hidden_state)
+        self.last_hidden_state = hidden_state
         return input_tensor
 
     @classmethod
@@ -54,11 +51,14 @@ class RecurrentNetwork(torch.nn.Module):
             output_dropout=output_dropout
         )
 
-    def save_hidden_state(self, hidden_state: Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]):
-        if isinstance(hidden_state, tuple):
-            self.last_hidden_state = torch.cat(hidden_state, dim=-1)
-            return
-        self.last_hidden_state = hidden_state
+    def initialize_hidden_state(self, sequence_length: int):
+        hidden_state = torch.zeros(
+            self.recurrent_layer.num_layers,
+            1,
+            self.recurrent_layer.hidden_size)
+        if isinstance(self.recurrent_layer, torch.nn.LSTM):
+            return hidden_state, hidden_state
+        return hidden_state
 
 
 class DenseNetwork(torch.nn.Module):
@@ -103,7 +103,7 @@ class DenseNetwork(torch.nn.Module):
             suffix = f"_{suffix}"
         input_size = config['individual_feature_dim']
 
-        if config['use_rnn']:
+        if config.get('use_rnn', False):
             rnn_output_size = config[f"num_units_rnn{suffix}"]
             if isinstance(rnn_output_size, list):
                 rnn_output_size = rnn_output_size[0]

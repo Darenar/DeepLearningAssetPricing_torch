@@ -14,25 +14,25 @@ UNKNOWN_VAL = -99.99
 
 class BaseMapping:
     def __init__(self, list_of_values: List[Any]):
-        self.__list_of_values = list_of_values
+        self.list_of_values = list_of_values
         self.__idx2var = None
         self.__var2idx = None
 
     def filter(self, filter_indexes: np.ndarray):
-        self.__list_of_values = self.__list_of_values[filter_indexes]
+        self.list_of_values = self.list_of_values[filter_indexes]
         self.__idx2var = None
         self.__var2idx = None
 
     @property
     def idx2var(self):
         if self.__idx2var is None:
-            self.__idx2var = {idx: var for idx, var in enumerate(self.__list_of_values)}
+            self.__idx2var = {idx: var for idx, var in enumerate(self.list_of_values)}
         return self.__idx2var
 
     @property
     def var2idx(self):
         if self.__var2idx is None:
-            self.__var2idx = {var: idx for idx, var in enumerate(self.__list_of_values)}
+            self.__var2idx = {var: idx for idx, var in enumerate(self.list_of_values)}
         return self.__var2idx
 
 
@@ -52,6 +52,16 @@ class StoredData:
     @property
     def features(self):
         return self.__data[:, :, self.__return_feature_num+1:]
+
+    def multiply_returns_on_sdf(self, sdf: np.ndarray, factor: int):
+        self.__data[:, :, self.__return_feature_num][self.mask] = (np.tile(sdf, self.mask.shape[1]) * factor)[self.mask]
+
+    def save_data_to_numpy(self, path_to_file: str):
+        np.savez(path_to_file,
+                 date=self.dates.list_of_values,
+                 variable=self.variables.list_of_values,
+                 permno=self.permno_count,
+                 data=self.__data)
 
     @classmethod
     def from_numpy_file(cls, path_to_numpy_file: PATH_TYPE):
@@ -152,11 +162,21 @@ class FirmChar:
         return variables_to_color_map
 
 
-class FinanceDataset(torch.utils.data.Dataset):
-    def __init__(self, path_to_individual_features: PATH_TYPE, path_to_macro_features: Optional[PATH_TYPE] = None,
-                 macro_indices: Optional[Union[str, List[str]]] = None):
-        self.individual_data = StoredData.from_numpy_file(path_to_individual_features)
-        self.macro_data = MacroDataset.from_numpy_file(path_to_macro_features)
+class FinanceDataset:
+    def __init__(self, individual_data: np.ndarray, individual_date_list: List[str],
+                 individual_variable_names: List[str], return_feature_num: int,
+                 macro_features_data: np.ndarray, macro_variable_names: List[str],
+                 macro_indices: Optional[Union[str, List[str]]] = None, **kwargs):
+        self.individual_data = StoredData(
+            data=individual_data,
+            date_list=individual_date_list,
+            variable_names=individual_variable_names,
+            return_feature_num=return_feature_num,
+        )
+        self.macro_data = MacroDataset(
+            macro_features_data=macro_features_data,
+            variable_names=macro_variable_names
+        )
         self.macro_data.filter(macro_indices)
         self.firm_char = None
 
@@ -172,9 +192,16 @@ class FinanceDataset(torch.utils.data.Dataset):
                     macro_feature_mean_val: np.ndarray = None, macro_feature_std_val: np.ndarray = None):
         if suffix:
             suffix = f'_{suffix}'
+
+        individual_dataset = np.load(config[f'individual_feature_file{suffix}'])
+        macro_dataset = np.load(config[f'macro_feature_file{suffix}'])
         dataset = cls(
-            path_to_individual_features=config[f'individual_feature_file{suffix}'],
-            path_to_macro_features=config[f'macro_feature_file{suffix}'],
+            individual_data=individual_dataset['data'],
+            individual_date_list=individual_dataset['date'],
+            individual_variable_names=individual_dataset['variable'],
+            return_feature_num=0,
+            macro_features_data=macro_dataset['data'],
+            macro_variable_names=macro_dataset['variable'],
             macro_indices=config['macro_idx']
         )
         dataset.add_firm_char(path_to_firm_chars)
@@ -192,7 +219,21 @@ class FinanceDataset(torch.utils.data.Dataset):
     def get_individual_feature_by_idx(self, idx: int):
         return self.individual_data.variables.idx2var[idx]
 
-    def iterate_one_epoch(self, sub_epoch: int = 1):
+    def get_sequence_length(self):
+        return self.individual_data.features.shape[0]
+
+    def save_individual_data_to_numpy(self, path_to_file: str):
+        self.individual_data.save_data_to_numpy(path_to_file)
+
+    def iterator(self, sub_epoch: int = 1):
+        if isinstance(sub_epoch, bool):
+            sub_epoch = 1
+        macro_tensor = torch.unsqueeze(torch.as_tensor(self.macro_data.features, dtype=torch.float32), 0)
+        ind_feat_tensor = torch.unsqueeze(torch.as_tensor(self.individual_data.features, dtype=torch.float32), 0)
+        return_tensor = torch.unsqueeze(
+            torch.unsqueeze(
+                torch.as_tensor(self.individual_data.return_array, dtype=torch.float32), 0), -1)
+        mask_tensor = torch.unsqueeze(torch.as_tensor(self.individual_data.mask, dtype=torch.bool), 2)
         for _ in range(sub_epoch):
-            yield self.macro_data.features, self.individual_data.features, \
-                  self.individual_data.return_array, self.individual_data.mask
+            yield macro_tensor, ind_feat_tensor, \
+                  return_tensor, mask_tensor
