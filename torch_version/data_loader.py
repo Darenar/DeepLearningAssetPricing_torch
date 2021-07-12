@@ -228,25 +228,25 @@ class FinanceDataset:
     def save_individual_data_to_numpy(self, path_to_file: str):
         self.individual_data.save_data_to_numpy(path_to_file)
 
-    @try_to_cuda
     @property
+    @try_to_cuda
     def macro_feat_tensor(self):
         return torch.unsqueeze(to_tensor(self.macro_data.features), 0)
 
-    @try_to_cuda
     @property
+    @try_to_cuda
     def ind_feat_tensor(self):
         return torch.unsqueeze(to_tensor(self.individual_data.features), 0)
 
-    @try_to_cuda
     @property
+    @try_to_cuda
     def returns_tensor(self):
         return torch.unsqueeze(
             torch.unsqueeze(
                 to_tensor(self.individual_data.return_array), 0), -1)
 
-    @try_to_cuda
     @property
+    @try_to_cuda
     def masks_tensor(self):
         return torch.unsqueeze(to_tensor(self.individual_data.mask, tensor_type=torch.bool), -1)
 

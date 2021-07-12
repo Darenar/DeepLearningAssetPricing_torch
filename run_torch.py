@@ -13,7 +13,7 @@ PATH_TO_RETURNS_CONFIG = 'configs/config_RF_1.json'
 
 
 def main(args):
-    logging.basicConfig(filename=args.path_to_output,
+    logging.basicConfig(filename=f"{args.path_to_output}/logger.txt",
                         format='%(asctime)s %(message)s',
                         datefmt='%m/%d/%Y %I:%M:%S %p',
                         level=logging.INFO)
@@ -77,11 +77,6 @@ if __name__ == '__main__':
     parser.add_argument('--path_to_rf_config', default=PATH_TO_RETURNS_CONFIG, help='Path to rf config file.')
     parser.add_argument('--path_to_output', default='torch_output', help='Path to output folder')
     parser.add_argument('--sdf_factor', default=50, help='Value by which to increase obtained SDF values.')
-    parser.add_argument('--save_freq', default=-1, help='Frequency to save checkpoints')
-    parser.add_argument("--save_log", dest="save_log", help="Save logs in output folder", action="store_true")
-    parser.add_argument("--print", dest="show", help="Show logs in the console", action="store_true")
-    parser.add_argument('--print_freq', default=128, type=int, metavar='N', help='Frequency of logs in console')
-    parser.add_argument('--warmup_steps', default=64, type=int, metavar='N', help='First epochs to ignore for printing')
     args = parser.parse_args()
     os.makedirs(args.path_to_output, exist_ok=True)
     main(args)

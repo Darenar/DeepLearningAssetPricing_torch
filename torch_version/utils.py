@@ -7,10 +7,18 @@ from .config_reader import Config
 
 
 def try_to_cuda(func: Callable):
+    def to_cuda(*args):
+        cuda_args = [x.cuda() for x in args]
+        if len(cuda_args) == 1:
+            return cuda_args[0]
+        return cuda_args
+
     def wrapper(*args, **kwargs):
         output_tensor = func(*args, **kwargs)
         if torch.cuda.is_available():
-            output_tensor = output_tensor.cuda()
+            if isinstance(output_tensor, tuple):
+                return to_cuda(*output_tensor)
+            return to_cuda(output_tensor)
         return output_tensor
 
     return wrapper

@@ -2,6 +2,7 @@ from typing import Union, Tuple, Iterable
 
 import torch
 import numpy as np
+import logging
 
 from .models.models import GANModel, ReturnsModel
 from .models.losses import LossCompose, WeightedLSLoss
@@ -131,7 +132,8 @@ def evaluate_sharpe_from_residual_returns(returns: torch.Tensor, mask: torch.Ten
 
 def train_model(config: Config, epochs: int, model: MODEL_TYPE,
                 loss: LOSS_TYPE, dataset_train: FinanceDataset,
-                dataset_valid: FinanceDataset, dataset_test: FinanceDataset, path_to_save: str):
+                dataset_valid: FinanceDataset, dataset_test: FinanceDataset,
+                path_to_save: str, print_freq: int = 100):
     # Initialize early stopper
     early_stopping = EarlyStopping()
     # Get optimizer and scheduler if applicable
@@ -182,15 +184,16 @@ def train_model(config: Config, epochs: int, model: MODEL_TYPE,
             dataset=dataset_test,
             loss=loss,
             hidden_state=valid_hidden_state)
-        print(f"Train main loss: {train_main_loss} "
-              f"and residual loss: {train_residual_loss}"
-              f" and sharpe {train_sharpe}")
-        print(f"Valid main loss: {valid_main_loss} "
-              f"and residual loss: {valid_residual_loss}"
-              f" and sharpe {valid_sharpe}")
-        print(f"Test main loss: {test_main_loss} "
-              f"and residual loss: {test_residual_loss}"
-              f" and sharpe {test_sharpe}")
+        if epoch % print_freq == 0:
+            print(f"Train main loss: {train_main_loss} "
+                  f"and residual loss: {train_residual_loss}"
+                  f" and sharpe {train_sharpe}")
+            print(f"Valid main loss: {valid_main_loss} "
+                  f"and residual loss: {valid_residual_loss}"
+                  f" and sharpe {valid_sharpe}")
+            print(f"Test main loss: {test_main_loss} "
+                  f"and residual loss: {test_residual_loss}"
+                  f" and sharpe {test_sharpe}")
 
         if early_stopping(valid_main_loss):
             return
@@ -220,6 +223,7 @@ def train_gan(config: Config, path_to_dump: str,
                                      main_loss_conditional=False,
                                      residual_loss_factor=config['residual_loss_factor']
                                      )
+    logging.info('Train unconditional Loss')
     train_model(epochs=config['num_epochs_unc'],
                 loss=unconditional_loss,
                 path_to_save=f'{path_to_dump}/unconditional_model.pth',
@@ -230,12 +234,14 @@ def train_gan(config: Config, path_to_dump: str,
                                           to_weight=config['weighted_loss'],
                                           main_loss_conditional=True
                                           )
+    logging.info('Train moment loss')
     train_model(epochs=config['num_epochs_moment'],
                 loss=moment_conditional_loss,
                 path_to_save=f'{path_to_dump}/moment_model.pth',
                 **train_inputs)
 
     # Lastly, initialize and optimize conditional loss
+    logging.info('Train conditional loss')
     conditional_loss = LossCompose(minimize=True,
                                    to_weight=config['weighted_loss'],
                                    main_loss_conditional=True,
@@ -258,7 +264,7 @@ def train_returns_model(config: Config, path_to_dump: str,
     least_squares_loss = WeightedLSLoss(to_weight=config['weighted_loss'])
     # Initialize returns model
     returns_model = ReturnsModel(config=config)
-
+    logging.info('Train returns model')
     train_model(config,
                 epochs=config['num_epochs'],
                 model=returns_model,
