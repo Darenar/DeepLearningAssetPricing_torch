@@ -1,4 +1,4 @@
-{
+FIRM_CHARS_DICT = {
   "categories":
   [
     {
@@ -24,7 +24,7 @@
     {
       "name":  "Trading Frictions",
       "variables": ["AT", "Beta", "IdioVol", "LME", "LTurnover", "MktBeta",
-        "Rel2High", "Resid_Var", "Spread", "SUV", "Variance"],
+                    "Rel2High", "Resid_Var", "Spread", "SUV", "Variance"],
       "color":  "orange"}
   ]
 }

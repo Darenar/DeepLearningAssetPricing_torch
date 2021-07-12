@@ -2,13 +2,15 @@ from typing import List
 
 import torch
 
+from ..config_reader import Config
+from ..utils import try_to_cuda
+
 
 class RecurrentNetwork(torch.nn.Module):
     def __init__(self, model_name: str, input_size: int, hidden_size: int, num_layers: int = 1,
                  input_dropout: float = 0., output_dropout: float = 0.):
         super(RecurrentNetwork, self).__init__()
-        self._input_dropout_val = input_dropout
-        self.input_dropout = torch.nn.Dropout(input_dropout)
+        self.input_dropout = torch.nn.Dropout(input_dropout) if input_dropout else None
         self.last_hidden_state = None
         parameters = {
             "input_size": input_size,
@@ -27,14 +29,16 @@ class RecurrentNetwork(torch.nn.Module):
             raise ValueError(f"Model name is unknown {model_name}")
 
     def forward(self, input_tensor: torch.Tensor, hidden_state: torch.Tensor) -> torch.Tensor:
-        if self._input_dropout_val:
+        if self.input_dropout is not None:
             input_tensor = self.input_dropout(input_tensor)
         input_tensor, hidden_state = self.recurrent_layer(input_tensor, hidden_state)
         self.last_hidden_state = hidden_state
         return input_tensor
 
     @classmethod
-    def from_config(cls, config: dict, suffix: str = '', input_dropout: float = 0., output_dropout: float = 0.):
+    @try_to_cuda
+    def from_config(cls, config: Config, suffix: str = '', input_dropout: float = 0.,
+                    output_dropout: float = 0.) -> 'RecurrentNetwork':
         if suffix:
             suffix = f"_{suffix}"
 
@@ -51,7 +55,7 @@ class RecurrentNetwork(torch.nn.Module):
             output_dropout=output_dropout
         )
 
-    def initialize_hidden_state(self, sequence_length: int):
+    def initialize_hidden_state(self):
         hidden_state = torch.zeros(
             self.recurrent_layer.num_layers,
             1,
@@ -67,7 +71,7 @@ class DenseNetwork(torch.nn.Module):
         super(DenseNetwork, self).__init__()
         layers_list = list()
         last_layer_dim = input_size
-        for index, dim in enumerate(hidden_dims):
+        for dim in hidden_dims:
             layers_list.extend([
                 torch.nn.Linear(in_features=last_layer_dim, out_features=dim),
                 self.get_activation_by_name(hidden_activation),
@@ -97,13 +101,14 @@ class DenseNetwork(torch.nn.Module):
                                       f"for DenseNetwork is not implemented. ")
 
     @classmethod
-    def from_config(cls, config: dict, suffix: str = '', output_size: int = 1., dropout: float = 0.,
-                    hidden_activation: str = 'relu', output_activation: str = None):
+    @try_to_cuda
+    def from_config(cls, config: Config, suffix: str = '', output_size: int = 1., dropout: float = 0.,
+                    hidden_activation: str = 'relu', output_activation: str = None) -> 'DenseNetwork':
         if suffix:
             suffix = f"_{suffix}"
         input_size = config['individual_feature_dim']
 
-        if config.get('use_rnn', False):
+        if config.use_rnn:
             rnn_output_size = config[f"num_units_rnn{suffix}"]
             if isinstance(rnn_output_size, list):
                 rnn_output_size = rnn_output_size[0]
@@ -119,8 +124,3 @@ class DenseNetwork(torch.nn.Module):
             hidden_activation=hidden_activation,
             output_activation=output_activation
         )
-
-
-
-
-

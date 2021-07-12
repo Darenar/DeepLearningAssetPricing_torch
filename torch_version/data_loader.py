@@ -1,15 +1,22 @@
-from typing import Union, Optional, List, Any
+from typing import Union, Optional, List, Any, Dict
 import os
-import json
 
 import numpy as np
 from pathlib import Path
 import torch
 import torch.utils.data
 
+from .config_reader import Config
+from .utils import try_to_cuda
+from .constants import FIRM_CHARS_DICT
+
 
 PATH_TYPE = Union[Path, str]
 UNKNOWN_VAL = -99.99
+
+
+def to_tensor(input_array: np.ndarray, tensor_type: torch.dtype = torch.float32) -> torch.Tensor:
+    return torch.as_tensor(input_array, dtype=tensor_type)
 
 
 class BaseMapping:
@@ -54,7 +61,8 @@ class StoredData:
         return self.__data[:, :, self.__return_feature_num+1:]
 
     def multiply_returns_on_sdf(self, sdf: np.ndarray, factor: int):
-        self.__data[:, :, self.__return_feature_num][self.mask] = (np.tile(sdf, self.mask.shape[1]) * factor)[self.mask]
+        multiplied_sdf = np.tile(sdf, self.mask.shape[1]) * factor
+        self.__data[:, :, self.__return_feature_num][self.mask] *= multiplied_sdf[self.mask]
 
     def save_data_to_numpy(self, path_to_file: str):
         np.savez(path_to_file,
@@ -64,7 +72,7 @@ class StoredData:
                  data=self.__data)
 
     @classmethod
-    def from_numpy_file(cls, path_to_numpy_file: PATH_TYPE):
+    def from_numpy_file(cls, path_to_numpy_file: PATH_TYPE) -> 'StoredData':
         if not os.path.exists(str(path_to_numpy_file)):
             raise ValueError(f'No such file {path_to_numpy_file}')
         dataset = np.load(path_to_numpy_file)
@@ -106,7 +114,7 @@ class MacroDataset:
         self.variables.filter(macro_idx)
 
     @classmethod
-    def from_numpy_file(cls, path_to_numpy_file: PATH_TYPE):
+    def from_numpy_file(cls, path_to_numpy_file: PATH_TYPE) -> 'MacroDataset':
         if not os.path.exists(str(path_to_numpy_file)):
             raise ValueError(f'No such file {path_to_numpy_file}')
         dataset = np.load(path_to_numpy_file)
@@ -135,7 +143,7 @@ class BaseCategory:
         self.variables = variables
         self.color = color
 
-    def get_variable_to_color_map(self):
+    def get_variable_to_color_map(self) -> Dict[str, str]:
         return {var: self.color for var in self.variables}
 
 
@@ -150,10 +158,8 @@ class FirmChar:
             ))
 
     @classmethod
-    def from_json_file(cls, path_to_json: str):
-        with open(path_to_json, 'r') as f:
-            firm_chars_json = json.load(f)
-        return cls(firm_chars_json['categories'])
+    def from_dict(cls, firm_chars_dict: dict):
+        return cls(firm_chars_dict['categories'])
 
     def get_color_label_map(self):
         variables_to_color_map = dict()
@@ -166,7 +172,7 @@ class FinanceDataset:
     def __init__(self, individual_data: np.ndarray, individual_date_list: List[str],
                  individual_variable_names: List[str], return_feature_num: int,
                  macro_features_data: np.ndarray, macro_variable_names: List[str],
-                 macro_indices: Optional[Union[str, List[str]]] = None, **kwargs):
+                 macro_indices: Optional[Union[str, List[str]]] = None, *args, **kwargs):
         self.individual_data = StoredData(
             data=individual_data,
             date_list=individual_date_list,
@@ -178,18 +184,16 @@ class FinanceDataset:
             variable_names=macro_variable_names
         )
         self.macro_data.filter(macro_indices)
-        self.firm_char = None
+        self.firm_char = FirmChar.from_dict(FIRM_CHARS_DICT)
 
     def normalize_macro_features(self, macro_feature_mean_val: np.ndarray = None,
                                  macro_feature_std_val: np.ndarray = None):
         self.macro_data.normalize(macro_feature_mean_val, macro_feature_std_val)
 
-    def add_firm_char(self, path_to_firm_char_json: str):
-        self.firm_char = FirmChar.from_json_file(path_to_firm_char_json)
-
     @classmethod
-    def from_config(cls, config: dict, path_to_firm_chars: str, suffix: str = '',
-                    macro_feature_mean_val: np.ndarray = None, macro_feature_std_val: np.ndarray = None):
+    def from_config(cls, config: Config, suffix: str = '',
+                    macro_feature_mean_val: np.ndarray = None,
+                    macro_feature_std_val: np.ndarray = None):
         if suffix:
             suffix = f'_{suffix}'
 
@@ -204,7 +208,6 @@ class FinanceDataset:
             macro_variable_names=macro_dataset['variable'],
             macro_indices=config['macro_idx']
         )
-        dataset.add_firm_char(path_to_firm_chars)
         dataset.normalize_macro_features(macro_feature_mean_val, macro_feature_std_val)
         return dataset
 
@@ -224,6 +227,28 @@ class FinanceDataset:
 
     def save_individual_data_to_numpy(self, path_to_file: str):
         self.individual_data.save_data_to_numpy(path_to_file)
+
+    @try_to_cuda
+    @property
+    def macro_feat_tensor(self):
+        return torch.unsqueeze(to_tensor(self.macro_data.features), 0)
+
+    @try_to_cuda
+    @property
+    def ind_feat_tensor(self):
+        return torch.unsqueeze(to_tensor(self.individual_data.features), 0)
+
+    @try_to_cuda
+    @property
+    def returns_tensor(self):
+        return torch.unsqueeze(
+            torch.unsqueeze(
+                to_tensor(self.individual_data.return_array), 0), -1)
+
+    @try_to_cuda
+    @property
+    def masks_tensor(self):
+        return torch.unsqueeze(to_tensor(self.individual_data.mask, tensor_type=torch.bool), -1)
 
     def iterator(self, sub_epoch: int = 1):
         if isinstance(sub_epoch, bool):

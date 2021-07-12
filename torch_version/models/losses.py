@@ -35,8 +35,8 @@ class BaseLoss:
             denominator = torch.max(weights) if normalize_by_max else torch.sum(weights)
             weights = weights / denominator
             squared_output *= weights
-
-        return torch.mean(squared_output) if normalize_by_max else torch.sum(squared_output)
+            return torch.mean(squared_output) if normalize_by_max else torch.sum(squared_output)
+        return torch.mean(squared_output)
 
 
 class UnconditionalLoss(BaseLoss):

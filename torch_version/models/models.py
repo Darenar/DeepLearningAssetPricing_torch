@@ -3,6 +3,8 @@ from typing import Union, Tuple, Optional
 import torch
 
 from .sub_networks import RecurrentNetwork, DenseNetwork
+from ..utils import try_to_cuda
+from ..config_reader import Config
 
 
 HIDDEN_STATE_TYPE = Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]
@@ -11,14 +13,14 @@ HIDDEN_STATE_TYPE = Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]
 class FeatureExtractionModel(torch.nn.Module):
     SUFFIX = ''
 
-    def __init__(self, config: dict, input_dropout: float = 0., output_dropout: float = 0.,
+    def __init__(self, config: Config, input_dropout: float = 0., output_dropout: float = 0.,
                  output_size: int = 1, dense_dropout: float = 0.,
                  hidden_activation: str = 'relu', output_activation: str = None
                  ):
         super().__init__()
         self.recurrent_net = None
 
-        if config.get('use_rnn', False):
+        if config.use_rnn:
             self.recurrent_net = RecurrentNetwork.from_config(
                 config, suffix=self.SUFFIX,
                 input_dropout=input_dropout, output_dropout=output_dropout)
@@ -29,7 +31,7 @@ class FeatureExtractionModel(torch.nn.Module):
             hidden_activation=hidden_activation,
             output_activation=output_activation
         )
-        self.normalize = config.get('normalize_w', False)
+        self.normalize = config.normalize_w
 
     def extract_features(self, macro_features: torch.Tensor, individual_features: torch.Tensor,
                          masks: torch.Tensor = None,
@@ -39,7 +41,6 @@ class FeatureExtractionModel(torch.nn.Module):
             macro_processed_tensor = self.recurrent_net(macro_features, hidden_state)
         else:
             macro_processed_tensor = macro_features
-        print(macro_processed_tensor.shape)
         # Expand second dim (1, time, feature) -> (1, time, 1, feature)
         macro_dense_input = torch.unsqueeze(
             macro_processed_tensor, 2)
@@ -101,15 +102,24 @@ class ReturnsModel(FeatureExtractionModel):
     def forward(self, macro_features: torch.Tensor, individual_features: torch.Tensor,
                 masks: torch.Tensor, returns_tensor: torch.Tensor, *args, **kwargs):
         returns_pred = self.extract_features(macro_features, individual_features, masks)
-
         returns_masked = torch.masked_select(returns_tensor, masks).reshape(
             (1, torch.sum(masks), returns_tensor.shape[-1]))
-
         return returns_masked - returns_pred
+
+    @try_to_cuda
+    def initialize_sdf_hidden_state(self) -> Optional[torch.Tensor]:
+        if self.recurrent_net is not None:
+            return self.recurrent_net.initialize_hidden_state()
+        return None
+
+    def get_last_hidden_state(self):
+        if self.recurrent_net is not None:
+            return self.recurrent_net.last_hidden_state
+        return None
 
 
 class GANModel(torch.nn.Module):
-    def __init__(self, config: dict, input_dropout: float = 0., output_dropout: float = 0.,
+    def __init__(self, config: Config, input_dropout: float = 0., output_dropout: float = 0.,
                  sdf_output_size: int = 1, dense_dropout: float = 0.,
                  hidden_activation: str = 'relu', moment_output_activation: str = 'tanh'):
         super().__init__()
@@ -123,7 +133,7 @@ class GANModel(torch.nn.Module):
         self.sdf_net = SDFModel(
             output_size=sdf_output_size, **model_params)
         self.moment_net = MomentsModel(
-            output_size=config['num_condition_moment'],
+            output_size=config.num_condition_moment,
             output_activation=moment_output_activation, **model_params)
 
     def forward(self, macro_features: torch.Tensor, individual_features: torch.Tensor,
@@ -132,9 +142,10 @@ class GANModel(torch.nn.Module):
         hidden_weights = self.moment_net(macro_features, individual_features)
         return sdf, weights, hidden_weights
 
-    def initialize_sdf_hidden_state(self, sequence_length: int) -> Optional[torch.Tensor]:
+    @try_to_cuda
+    def initialize_sdf_hidden_state(self) -> Optional[torch.Tensor]:
         if self.sdf_net.recurrent_net is not None:
-            return self.sdf_net.recurrent_net.initialize_hidden_state(sequence_length)
+            return self.sdf_net.recurrent_net.initialize_hidden_state()
         return None
 
     def get_last_hidden_state(self):

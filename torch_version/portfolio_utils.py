@@ -3,8 +3,8 @@ import numpy as np
 from .data_loader import FinanceDataset
 
 
-def sharpe(input_array: np.ndarray):
-	return np.mean(input_array / input_array.std())
+def sharpe(input_array: np.ndarray) -> float:
+	return float(np.mean(input_array / input_array.std()))
 
 
 def construct_long_short_portfolio(
@@ -72,15 +72,15 @@ def decompose_returns(predicted_returns: np.ndarray, dataset: FinanceDataset):
 	predicted_returns_hat_list = list()
 	residual_list = list()
 	for true_r, pred_r in zip(true_return_split, pred_return_split):
-		pred_r_hat_i = pred_r.dot(true_r) / pred_r.dor(pred_r) * pred_r
+		pred_r_hat_i = pred_r.dot(true_r) / pred_r.dot(pred_r) * pred_r
 		res_r_i = true_r - pred_r_hat_i
 		predicted_returns_hat_list.append(pred_r_hat_i)
 		residual_list.append(res_r_i)
 
 	returns_hat = np.zeros_like(mask_array, dtype=float)
 	residuals = np.zeros_like(mask_array, dtype=float)
-	returns_hat[mask_array] = predicted_returns_hat_list
-	residuals[mask_array] = residual_list
+	returns_hat[mask_array] = np.concatenate(predicted_returns_hat_list)
+	residuals[mask_array] = np.concatenate(residual_list)
 	return returns_hat, residuals, mask_array, returns_array
 
 

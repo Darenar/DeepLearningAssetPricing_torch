@@ -1,59 +1,48 @@
+from typing import Callable, Iterable, List, Union
+
 import numpy as np
+import torch
+
+from .config_reader import Config
 
 
-def sharpen(input_array: np.ndarray):
-	return np.mean(input_array / input_array.std())
+def try_to_cuda(func: Callable):
+    def wrapper(*args, **kwargs):
+        output_tensor = func(*args, **kwargs)
+        if torch.cuda.is_available():
+            output_tensor = output_tensor.cuda()
+        return output_tensor
+
+    return wrapper
 
 
-def construct_long_short_portfolio(
-		predictions: np.ndarray, returns: np.ndarray,
-		mask: np.ndarray, weights: np.ndarray = None,
-		low: float = 0.1, high: float = 0.1, normalize: bool = True):
+def get_optimizer_from_config(config: Config, trainable_params: Iterable[torch.Tensor], momentum: float = 0.9,
+                              eps: float = 1e-08, rho: float = 0.95):
+    optimizer_name = config['optimizer']
+    optimizer_params = {'params': trainable_params, 'lr': config['learning_rate']}
+    if optimizer_name == 'Momentum':
+        optimizer_params.update({'momentum': momentum})
+        return torch.optim.SGD(**optimizer_params)
+    elif optimizer_name == 'AdaDelta':
+        optimizer_params.update({'eps': eps, 'rho': rho})
+        return torch.optim.Adadelta(**optimizer_params)
+    elif optimizer_name == 'Adam':
+        return torch.optim.Adam(**optimizer_params)
+    else:
+        raise NotImplementedError(f"Optimizer {optimizer_name} is not yet implemented.")
 
-	mask_by_columns = np.sum(mask.astype(int), axis=1)
-	mask_by_columns_cum_sum = np.cumsum(mask_by_columns)
-	predictions_split = np.split(predictions, mask_by_columns_cum_sum)[:-1]
-	returns_split = np.split(returns, mask_by_columns_cum_sum)[:-1]
 
-	# value weighted
-	to_weight = False
-	if weights is not None:
-		to_weight = True
-		weights_split = np.split(weights, mask_by_columns_cum_sum)[:-1]
+def get_scheduler_from_config(config: Config, optimizer: torch.optim.Optimizer):
+    if config['use_decay']:
+        return torch.optim.lr_scheduler.ExponentialLR(
+            optimizer,
+            gamma=config['decay_rate'],
+            last_epoch=config['decay_steps'])
+    return None
 
-	portfolio_returns = list()
-	for j in range(mask.shape[0]):
-		returns_j = returns_split[j]
-		prediction_j = predictions_split[j]
-		if to_weight:
-			weight_j = weights_split[j]
-			return_prediction_weight_j_k = [
-				(returns_j[k], prediction_j[k], weight_j[k]) for k in range(mask_by_columns[j])]
-		else:
-			return_prediction_weight_j_k = [
-				(returns_j[k], prediction_j[k], 1) for k in range(mask_by_columns[j])]
-		return_prediction_weight_j_k_sorted = sorted(return_prediction_weight_j_k, key=lambda t: t[1])
-		n_low = int(low * mask_by_columns[j])
-		n_high = int(high * mask_by_columns[j])
 
-		portfolio_return_high = 0.0
-		if n_high:
-			value_sum_high = 0.0
-			for k in range(n_high):
-				portfolio_return_high += return_prediction_weight_j_k_sorted[-k-1][0] * return_prediction_weight_j_k_sorted[-k-1][2]
-				value_sum_high += return_prediction_weight_j_k_sorted[-k-1][2]
-			if normalize:
-				portfolio_return_high /= value_sum_high
-
-		portfolio_return_low = 0.0
-		if n_low:
-			portfolio_return_low = 0.0
-			value_sum_low = 0.0
-			for k in range(n_low):
-				portfolio_return_low += return_prediction_weight_j_k_sorted[k][0] * return_prediction_weight_j_k_sorted[k][2]
-				value_sum_low += return_prediction_weight_j_k_sorted[k][2]
-			if normalize:
-				portfolio_return_low /= value_sum_low
-
-		portfolio_returns.append(portfolio_return_high - portfolio_return_low)
-	return np.array(portfolio_returns)
+def to_numpy(*args) -> Union[np.ndarray, List[np.ndarray]]:
+    numpy_args = [x.detach().cpu().numpy() if isinstance(x, torch.Tensor) else x for x in args]
+    if len(numpy_args) == 1:
+        return numpy_args[0]
+    return numpy_args
