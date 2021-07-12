@@ -1,4 +1,4 @@
-from typing import Union, Tuple
+from typing import Union, Tuple, Iterable
 
 import torch
 import numpy as np
@@ -13,11 +13,12 @@ from .config_reader import Config
 
 
 HIDDEN_STATE_TYPE = Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]
+MODEL_TYPE = Union[GANModel, ReturnsModel]
+LOSS_TYPE = Union[LossCompose, WeightedLSLoss]
 
 
-def forward_with_dataset(model: Union[GANModel, ReturnsModel], dataset: FinanceDataset,
-                         hidden_state: torch.Tensor = None) -> \
-        Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor, torch.Tensor]]:
+def forward_with_dataset(model: MODEL_TYPE, dataset: FinanceDataset,
+                         hidden_state: torch.Tensor = None) -> Union[torch.Tensor, Iterable[torch.Tensor]]:
     return model(
             macro_features=dataset.macro_feat_tensor,
             individual_features=dataset.ind_feat_tensor,
@@ -26,9 +27,8 @@ def forward_with_dataset(model: Union[GANModel, ReturnsModel], dataset: FinanceD
             hidden_state=hidden_state)
 
 
-def evaluate(model: Union[GANModel, ReturnsModel], dataset: FinanceDataset,
-             loss: Union[LossCompose, WeightedLSLoss],
-             hidden_state: HIDDEN_STATE_TYPE, normalize_sdf: bool = False):
+def evaluate(model: MODEL_TYPE, dataset: FinanceDataset, loss: LOSS_TYPE,
+             hidden_state: HIDDEN_STATE_TYPE, normalize_sdf: bool = False) -> Iterable[float]:
 
     model.eval()
     residual_loss_value = None
@@ -66,7 +66,7 @@ def evaluate(model: Union[GANModel, ReturnsModel], dataset: FinanceDataset,
 
 
 def get_normalized_sdf(sdf: np.ndarray, weights: np.ndarray, returns: np.ndarray,
-                       mask: np.ndarray, normalize: bool):
+                       mask: np.ndarray, normalize: bool) -> np.ndarray:
     if normalize:
         splits = np.sum(mask, axis=1).cumsum()[:-1]
         weights_list = np.split(weights, splits)
@@ -129,8 +129,8 @@ def evaluate_sharpe_from_residual_returns(returns: torch.Tensor, mask: torch.Ten
     return sharpe(portfolio)
 
 
-def train_model(config: Config, epochs: int, model: Union[GANModel, ReturnsModel],
-                loss: Union[LossCompose, WeightedLSLoss], dataset_train: FinanceDataset,
+def train_model(config: Config, epochs: int, model: MODEL_TYPE,
+                loss: LOSS_TYPE, dataset_train: FinanceDataset,
                 dataset_valid: FinanceDataset, dataset_test: FinanceDataset, path_to_save: str):
     # Initialize early stopper
     early_stopping = EarlyStopping()
@@ -230,7 +230,7 @@ def train_gan(config: Config, path_to_dump: str,
                                           to_weight=config['weighted_loss'],
                                           main_loss_conditional=True
                                           )
-    train_model(epochs=config['num_epochs_unc'],
+    train_model(epochs=config['num_epochs_moment'],
                 loss=moment_conditional_loss,
                 path_to_save=f'{path_to_dump}/moment_model.pth',
                 **train_inputs)
@@ -240,7 +240,7 @@ def train_gan(config: Config, path_to_dump: str,
                                    to_weight=config['weighted_loss'],
                                    main_loss_conditional=True,
                                    residual_loss_factor=config['residual_loss_factor'])
-    train_model(epochs=config['num_epochs_unc'],
+    train_model(epochs=config['num_epochs'],
                 loss=conditional_loss,
                 path_to_save=f'{path_to_dump}/condition_model.pth',
                 **train_inputs)

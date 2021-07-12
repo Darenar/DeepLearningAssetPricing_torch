@@ -8,6 +8,10 @@ from torch_version.engine import train_gan, train_returns_model, predict_normali
 from torch_version.portfolio_utils import calculate_statistics
 
 
+PATH_TO_GAN_CONFIG = 'configs/config.json'
+PATH_TO_RETURNS_CONFIG = 'configs/config_RF_1.json'
+
+
 def main(args):
     logging.basicConfig(filename=args.path_to_output,
                         format='%(asctime)s %(message)s',
@@ -69,11 +73,10 @@ def main(args):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Torch Version Asset Pricing')
-    parser.add_argument('--path_to_config', help='Path to config file.')
-    parser.add_argument('--path_to_rf_config', help='Path to rf config file.')
+    parser.add_argument('--path_to_config', default=PATH_TO_GAN_CONFIG, help='Path to config file.')
+    parser.add_argument('--path_to_rf_config', default=PATH_TO_RETURNS_CONFIG, help='Path to rf config file.')
     parser.add_argument('--path_to_output', default='torch_output', help='Path to output folder')
     parser.add_argument('--sdf_factor', default=50, help='Value by which to increase obtained SDF values.')
-    parser.add_argument('--path_to_output', help='Path to output folder to save logs and checkpoints into.')
     parser.add_argument('--save_freq', default=-1, help='Frequency to save checkpoints')
     parser.add_argument("--save_log", dest="save_log", help="Save logs in output folder", action="store_true")
     parser.add_argument("--print", dest="show", help="Show logs in the console", action="store_true")
