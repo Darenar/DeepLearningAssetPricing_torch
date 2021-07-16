@@ -125,9 +125,9 @@ class GANModel(torch.nn.Module):
         super().__init__()
         model_params = {
             'config': config,
-            'input_dropout': input_dropout,
+            'input_dropout': max(input_dropout, 1 - config.dropout),
             'output_dropout': output_dropout,
-            'dense_dropout': dense_dropout,
+            'dense_dropout': max(dense_dropout, 1 - config.dropout),
             'hidden_activation': hidden_activation,
         }
         self.sdf_net = SDFModel(

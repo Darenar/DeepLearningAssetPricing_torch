@@ -13,7 +13,10 @@ PATH_TO_RETURNS_CONFIG = 'configs/config_RF_1.json'
 
 
 def main(args):
-    logging.basicConfig(filename=f"{args.path_to_output}/logger.txt",
+    path_to_logger_file = f"{args.path_to_output}/logger.txt"
+    if os.path.exists(path_to_logger_file):
+        os.remove(path_to_logger_file)
+    logging.basicConfig(filename=path_to_logger_file,
                         format='%(asctime)s %(message)s',
                         datefmt='%m/%d/%Y %I:%M:%S %p',
                         level=logging.INFO)

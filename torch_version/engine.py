@@ -133,7 +133,7 @@ def evaluate_sharpe_from_residual_returns(returns: torch.Tensor, mask: torch.Ten
 def train_model(config: Config, epochs: int, model: MODEL_TYPE,
                 loss: LOSS_TYPE, dataset_train: FinanceDataset,
                 dataset_valid: FinanceDataset, dataset_test: FinanceDataset,
-                path_to_save: str, print_freq: int = 100):
+                path_to_save: str, print_freq: int = 10):
     # Initialize early stopper
     early_stopping = EarlyStopping()
     # Get optimizer and scheduler if applicable
@@ -185,15 +185,16 @@ def train_model(config: Config, epochs: int, model: MODEL_TYPE,
             loss=loss,
             hidden_state=valid_hidden_state)
         if epoch % print_freq == 0:
-            print(f"Train main loss: {train_main_loss} "
-                  f"and residual loss: {train_residual_loss}"
-                  f" and sharpe {train_sharpe}")
-            print(f"Valid main loss: {valid_main_loss} "
-                  f"and residual loss: {valid_residual_loss}"
-                  f" and sharpe {valid_sharpe}")
-            print(f"Test main loss: {test_main_loss} "
-                  f"and residual loss: {test_residual_loss}"
-                  f" and sharpe {test_sharpe}")
+            logging.info(f"Epoch: {epoch}")
+            logging.info(f"Train main loss: {train_main_loss} "
+                         f"and residual loss: {train_residual_loss}"
+                         f" and sharpe {train_sharpe}")
+            logging.info(f"Valid main loss: {valid_main_loss} "
+                         f"and residual loss: {valid_residual_loss}"
+                         f" and sharpe {valid_sharpe}")
+            logging.info(f"Test main loss: {test_main_loss} "
+                         f"and residual loss: {test_residual_loss}"
+                         f" and sharpe {test_sharpe}")
 
         if early_stopping(valid_main_loss):
             return
