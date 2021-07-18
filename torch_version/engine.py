@@ -213,7 +213,6 @@ def train_gan(config: Config, path_to_dump: str,
     # Prepare inputs for training
     train_inputs = {
         'config': config,
-        'model': gan_model,
         'dataset_train': dataset_train,
         'dataset_valid': dataset_valid,
         'dataset_test': dataset_test
@@ -225,7 +224,9 @@ def train_gan(config: Config, path_to_dump: str,
                                      residual_loss_factor=config['residual_loss_factor']
                                      )
     logging.info('Train unconditional Loss')
+    gan_model.froze_moment_net()
     train_model(epochs=config['num_epochs_unc'],
+                model=gan_model,
                 loss=unconditional_loss,
                 path_to_save=f'{path_to_dump}/unconditional_model.pth',
                 **train_inputs)
@@ -236,7 +237,9 @@ def train_gan(config: Config, path_to_dump: str,
                                           main_loss_conditional=True
                                           )
     logging.info('Train moment loss')
+    gan_model.froze_sdf_net()
     train_model(epochs=config['num_epochs_moment'],
+                model=gan_model,
                 loss=moment_conditional_loss,
                 path_to_save=f'{path_to_dump}/moment_model.pth',
                 **train_inputs)
@@ -247,7 +250,9 @@ def train_gan(config: Config, path_to_dump: str,
                                    to_weight=config['weighted_loss'],
                                    main_loss_conditional=True,
                                    residual_loss_factor=config['residual_loss_factor'])
+    gan_model.froze_moment_net()
     train_model(epochs=config['num_epochs'],
+                model=gan_model,
                 loss=conditional_loss,
                 path_to_save=f'{path_to_dump}/condition_model.pth',
                 **train_inputs)

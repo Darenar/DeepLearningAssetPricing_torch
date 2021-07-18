@@ -153,5 +153,17 @@ class GANModel(torch.nn.Module):
             return self.sdf_net.recurrent_net.last_hidden_state
         return None
 
+    def froze_sdf_net(self):
+        for param in self.sdf_net.parameters():
+            param.requires_grad = False
+        for param in self.moment_net.parameters():
+            param.requires_grad = True
+
+    def froze_moment_net(self):
+        for param in self.sdf_net.parameters():
+            param.requires_grad = True
+        for param in self.moment_net.parameters():
+            param.requires_grad = False
+
 
 
