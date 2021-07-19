@@ -11,7 +11,7 @@ class Config:
     weighted_loss: bool = False
     loss_factor: float = 1.0
     dropout: float = 0.95
-    sub_epoch: Union[int, bool] = False
+    sub_epoch: int = 1
     normalize_w: bool = False
     residual_loss_factor: float = 0.
     use_decay: bool = False
@@ -53,6 +53,8 @@ class Config:
     def from_json(cls, path_to_json: str):
         with open(path_to_json, 'r') as f:
             json_file = json.load(f)
+        if isinstance(json_file['sub_epoch'], bool):
+            json_file['sub_epoch'] = 1
         return cls(**json_file)
 
     def __getitem__(self, item: str):

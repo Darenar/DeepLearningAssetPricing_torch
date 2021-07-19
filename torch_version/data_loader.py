@@ -249,16 +249,3 @@ class FinanceDataset:
     @try_to_cuda
     def masks_tensor(self):
         return torch.unsqueeze(to_tensor(self.individual_data.mask, tensor_type=torch.bool), -1)
-
-    def iterator(self, sub_epoch: int = 1):
-        if isinstance(sub_epoch, bool):
-            sub_epoch = 1
-        macro_tensor = torch.unsqueeze(torch.as_tensor(self.macro_data.features, dtype=torch.float32), 0)
-        ind_feat_tensor = torch.unsqueeze(torch.as_tensor(self.individual_data.features, dtype=torch.float32), 0)
-        return_tensor = torch.unsqueeze(
-            torch.unsqueeze(
-                torch.as_tensor(self.individual_data.return_array, dtype=torch.float32), 0), -1)
-        mask_tensor = torch.unsqueeze(torch.as_tensor(self.individual_data.mask, dtype=torch.bool), 2)
-        for _ in range(sub_epoch):
-            yield macro_tensor, ind_feat_tensor, \
-                  return_tensor, mask_tensor

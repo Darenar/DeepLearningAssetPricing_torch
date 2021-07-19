@@ -1,4 +1,5 @@
 from typing import Union, Tuple, Iterable
+import os
 
 import torch
 import numpy as np
@@ -209,6 +210,9 @@ def train_gan(config: Config, path_to_dump: str,
 
     # Initialize GAN Model
     gan_model = GANModel(config=config)
+    if os.path.exists(f"{path_to_dump}/model_dump.pth"):
+        gan_model.load_state_dict(torch.load(f"{path_to_dump}/model_dump.pth"))
+        return gan_model
 
     # Prepare inputs for training
     train_inputs = {

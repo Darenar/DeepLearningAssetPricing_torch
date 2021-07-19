@@ -50,6 +50,8 @@ def get_scheduler_from_config(config: Config, optimizer: torch.optim.Optimizer):
 
 
 def to_numpy(*args) -> Union[np.ndarray, List[np.ndarray]]:
+    if len(args) == 1 and isinstance(args[0], tuple):
+        args = args[0]
     numpy_args = [x.detach().cpu().numpy() if isinstance(x, torch.Tensor) else x for x in args]
     if len(numpy_args) == 1:
         return numpy_args[0]
