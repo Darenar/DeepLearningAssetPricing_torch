@@ -3,6 +3,14 @@ from typing import Optional
 import torch
 
 
+class MinimizeFlag:
+    @property
+    def minimize(self):
+        if hasattr(self, '__minimize'):
+            return self.__minimize
+        return False
+
+
 class BaseLoss:
     def __init__(self, to_weight: bool):
         self.to_weight = to_weight
@@ -51,7 +59,7 @@ class ConditionalLoss(BaseLoss):
         return self._calculate_loss(returns_tensor, masks, sdf, hidden_weights)
 
 
-class WeightedLSLoss(BaseLoss):
+class WeightedLSLoss(BaseLoss, MinimizeFlag):
     def __call__(self, returns_tensor: torch.Tensor, masks: torch.Tensor, *args, **kwargs):
         weights = self.get_weights_from_mask(masks)
         return self.mean_square(returns_tensor, weights if self.to_weight else None, normalize_by_max=False)
@@ -75,7 +83,7 @@ class ResidualLoss:
         return torch.mean(torch.tensor(residual_square_list)) / torch.mean(torch.tensor(r_square_list))
 
 
-class LossCompose:
+class LossCompose(MinimizeFlag):
     def __init__(self, minimize: bool, to_weight: bool, main_loss_conditional: bool,
                  residual_loss_factor: float = 0.):
         self.residual_loss_factor = residual_loss_factor
@@ -84,7 +92,7 @@ class LossCompose:
         else:
             self.main_loss = UnconditionalLoss(to_weight=to_weight)
         self.residual_loss = ResidualLoss()
-        self.minimize = minimize
+        self.__minimize = minimize
         if not self.minimize and self.residual_loss_factor:
             raise NotImplementedError('Can not maximize with residual loss')
 

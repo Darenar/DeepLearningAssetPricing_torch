@@ -5,7 +5,7 @@ import logging
 from torch_version.config_reader import Config
 from torch_version.data_loader import FinanceDataset
 from torch_version.engine import train_gan, train_returns_model, predict_normalized_sdf, predict_returns
-from torch_version.portfolio_utils import calculate_statistics
+from torch_version.portfolio_utils import calculate_statistics, sharpe
 
 
 PATH_TO_GAN_CONFIG = 'configs/config.json'
@@ -44,9 +44,10 @@ def main(args):
                           dataset_valid=val_dataset,
                           dataset_test=test_dataset)
     logging.info("Predict normalized SDF values with trained GAN model")
-    train_sdf, train_hidden_state = predict_normalized_sdf(gan_model, train_dataset)
-    val_sdf, val_hidden_state = predict_normalized_sdf(gan_model, val_dataset, train_hidden_state)
-    test_sdf, _ = predict_normalized_sdf(gan_model, test_dataset, val_hidden_state)
+    train_sdf, train_hidden_state = predict_normalized_sdf(gan_model, train_dataset, as_factor=True)
+    val_sdf, val_hidden_state = predict_normalized_sdf(gan_model, val_dataset, train_hidden_state, as_factor=True)
+    test_sdf, _ = predict_normalized_sdf(gan_model, test_dataset, val_hidden_state, as_factor=True)
+    logging.info('SDF after GAN train/val/test:', sharpe(train_sdf), sharpe(val_sdf), sharpe(test_sdf))
 
     logging.info("Multiply individual returns by obtained SDF vector")
     train_dataset.individual_data.multiply_returns_on_sdf(train_sdf, factor=args.sdf_factor)
@@ -55,7 +56,6 @@ def main(args):
 
     logging.info("Start modelling residual returns")
     config_rf = Config.from_json(args.path_to_rf_config)
-    # Filter macro data by the config if necessary
     train_dataset.macro_data.filter(config_rf['macro_idx'])
     val_dataset.macro_data.filter(config_rf['macro_idx'])
     test_dataset.macro_data.filter(config_rf['macro_idx'])
@@ -65,7 +65,11 @@ def main(args):
                                         dataset_train=train_dataset,
                                         dataset_valid=val_dataset,
                                         dataset_test=test_dataset)
-    logging.info("Predicting returns with trained Returns Model")
+    logging.info("Predicting returns with trained Returns Model on original data")
+    train_dataset = FinanceDataset.from_config(config)
+    val_dataset = FinanceDataset.from_config(config, suffix='valid')
+    test_dataset = FinanceDataset.from_config(config, suffix='test')
+
     train_pred_returns = predict_returns(returns_model, train_dataset)
     val_pred_returns = predict_returns(returns_model, val_dataset)
     test_pred_returns = predict_returns(returns_model, test_dataset)

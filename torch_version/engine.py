@@ -67,67 +67,63 @@ def evaluate(model: MODEL_TYPE, dataset: FinanceDataset, loss: LOSS_TYPE,
     return main_loss_value, residual_loss_value, sharpe_val
 
 
-def get_normalized_sdf(sdf: np.ndarray, weights: np.ndarray, returns: np.ndarray,
-                       mask: np.ndarray, normalize: bool) -> np.ndarray:
-    if normalize:
-        splits = np.sum(mask, axis=1).cumsum()[:-1]
-        weights_list = np.split(weights, splits)
-        weights_array = np.concatenate([item / np.absolute(item).sum() for item in weights_list])
-        if len(returns.shape) > 3:
-            returns = returns[0, :]
-        weighted_returns_list = np.split(returns[mask] * weights_array.flatten(), splits)
-        sdf = np.array([[item.sum()] for item in weighted_returns_list]) + 1
-    return sdf
+def _get_normalized_sdf_from_weights(weights: np.ndarray, returns: np.ndarray, mask: np.ndarray) -> np.ndarray:
+    splits = np.sum(mask, axis=1).cumsum()[:-1]
+    weights_list = np.split(weights, splits)
+    weights_array = np.concatenate([item / np.absolute(item).sum() for item in weights_list])
+    if len(returns.shape) > 3:
+        returns = returns[0, :]
+    weighted_returns_list = np.split(returns[mask] * weights_array.flatten(), splits)
+    return np.array([[item.sum()] for item in weighted_returns_list]) + 1
 
 
-def predict_returns(model: ReturnsModel, dataset: FinanceDataset):
-    residual_returns = to_numpy(forward_with_dataset(model, dataset))
-    predicted_return = get_predicted_returns(
-        returns=dataset.individual_data.return_array,
-        mask=dataset.individual_data.mask,
-        residual_returns=residual_returns)
-    return predicted_return
-
-
-def get_predicted_returns(returns: np.ndarray,
-                          mask: np.ndarray,
-                          residual_returns: np.ndarray) -> np.ndarray:
+def _get_predicted_returns(residual_returns: np.ndarray, returns: np.ndarray, mask: np.ndarray) -> np.ndarray:
     if len(returns.shape) > 3:
         returns = returns[0, :]
     returns = returns[mask]
     return returns - residual_returns.flatten()
 
 
-def predict_normalized_sdf(model: GANModel, dataset: FinanceDataset, hidden_state: torch.Tensor = None) -> \
-        Tuple[np.ndarray, HIDDEN_STATE_TYPE]:
+def predict_returns(model: ReturnsModel, dataset: FinanceDataset) -> np.ndarray:
+    model.eval()
+    residual_returns = to_numpy(forward_with_dataset(model, dataset))
+    # Get predicted returns from residual and true returns
+    return _get_predicted_returns(residual_returns,
+                                  returns=dataset.individual_data.return_array,
+                                  mask=dataset.individual_data.mask)
+
+
+def predict_normalized_sdf(model: GANModel, dataset: FinanceDataset, hidden_state: HIDDEN_STATE_TYPE = None,
+                           as_factor: bool = False) -> Tuple[np.ndarray, HIDDEN_STATE_TYPE]:
     model.eval()
     if hidden_state is None:
         hidden_state = model.initialize_sdf_hidden_state()
 
-    sdf, weights, hidden_weights = to_numpy(forward_with_dataset(model, dataset, hidden_state))
-    normalized_sdf = get_normalized_sdf(sdf, weights,
-                                        dataset.individual_data.return_array,
-                                        dataset.individual_data.mask, normalize=True)
+    _, weights, _ = to_numpy(forward_with_dataset(model, dataset, hidden_state))
+    sdf = _get_normalized_sdf_from_weights(
+        weights=weights, returns=dataset.individual_data.return_array,
+        mask=dataset.individual_data.mask
+    )
+    if as_factor:
+        sdf = 1 - sdf
     output_hidden_state = model.get_last_hidden_state()
-    return normalized_sdf, output_hidden_state
+    return sdf, output_hidden_state
 
 
 def evaluate_sharpe_from_sdf(sdf: torch.Tensor, weights: torch.Tensor, returns: torch.Tensor,
                              mask: torch.Tensor, normalize: bool) -> float:
     sdf, weights, returns, mask = to_numpy(sdf, weights, returns, mask)
-    sdf_array = get_normalized_sdf(sdf, weights, returns, mask, normalize)
-    sdf_array = 1 - sdf_array
-    return sharpe(sdf_array)
+    if normalize:
+        sdf = _get_normalized_sdf_from_weights(weights, returns, mask)
+    sdf = 1 - sdf
+    return sharpe(sdf)
 
 
 def evaluate_sharpe_from_residual_returns(returns: torch.Tensor, mask: torch.Tensor,
                                           residual_returns: torch.Tensor) -> float:
     returns, mask, residual_returns = to_numpy(returns, mask, residual_returns)
-    if len(returns.shape) > 3:
-        returns = returns[0, :]
-    returns = returns[mask]
-    sdf = returns - residual_returns.flatten()
-    portfolio = construct_long_short_portfolio(sdf, returns, mask[:, :, 0])
+    predicted_returns = _get_predicted_returns(residual_returns, returns, mask)
+    portfolio = construct_long_short_portfolio(predicted_returns, returns, mask[:, :, 0])
     return sharpe(portfolio)
 
 
@@ -136,7 +132,7 @@ def train_model(config: Config, epochs: int, model: MODEL_TYPE,
                 dataset_valid: FinanceDataset, dataset_test: FinanceDataset,
                 path_to_save: str, print_freq: int = 10):
     # Initialize early stopper
-    early_stopping = EarlyStopping()
+    early_stopping = EarlyStopping(minimize=loss.minimize)
     # Get optimizer and scheduler if applicable
     optimizer = get_optimizer_from_config(config, model.parameters())
     scheduler = get_scheduler_from_config(config, optimizer)
@@ -144,10 +140,16 @@ def train_model(config: Config, epochs: int, model: MODEL_TYPE,
     # If RNN should be used - initialize random hidden state
     train_initial_hidden_state = model.initialize_sdf_hidden_state() if config['use_rnn'] else None
 
-    last_metric_value = 1e10
+    if loss.minimize:
+        sub_epochs = config['sub_epoch']
+        last_metric_value = 1e10
+    else:
+        sub_epochs = 1
+        last_metric_value = -1e10
+
     for epoch in range(epochs):
         model.train()
-        for sub_epoch in range(config['sub_epoch']):
+        for sub_epoch in range(sub_epochs):
             if isinstance(model, GANModel):
                 sdf, weights, hidden_weights = forward_with_dataset(model, dataset_train, train_initial_hidden_state)
                 loss_tensor = loss(
@@ -199,7 +201,10 @@ def train_model(config: Config, epochs: int, model: MODEL_TYPE,
 
         if early_stopping(valid_main_loss):
             return
-        if last_metric_value > valid_main_loss:
+
+        is_min_cond = loss.minimize and last_metric_value > valid_main_loss
+        is_not_min_cond = not loss.minimize and last_metric_value < valid_main_loss
+        if is_min_cond or is_not_min_cond:
             last_metric_value = valid_main_loss
             torch.save(model.state_dict(), path_to_save)
 
@@ -211,7 +216,7 @@ def train_gan(config: Config, path_to_dump: str,
     # Initialize GAN Model
     gan_model = GANModel(config=config)
     if os.path.exists(f"{path_to_dump}/model_dump.pth"):
-        gan_model.load_state_dict(torch.load(f"{path_to_dump}/model_dump.pth"))
+        gan_model.load_state_dict(torch.load(f"{path_to_dump}/model_dump.pth", map_location=torch.device('cpu')))
         return gan_model
 
     # Prepare inputs for training
@@ -274,6 +279,9 @@ def train_returns_model(config: Config, path_to_dump: str,
     least_squares_loss = WeightedLSLoss(to_weight=config['weighted_loss'])
     # Initialize returns model
     returns_model = ReturnsModel(config=config)
+    if os.path.exists(f"{path_to_dump}/returns_model.pth"):
+        returns_model.load_state_dict(torch.load(f"{path_to_dump}/returns_model.pth", map_location=torch.device('cpu')))
+        return returns_model
     logging.info('Train returns model')
     train_model(config,
                 epochs=config['num_epochs'],
