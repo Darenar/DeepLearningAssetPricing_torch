@@ -6,9 +6,9 @@ import torch
 class MinimizeFlag:
     @property
     def minimize(self):
-        if hasattr(self, '__minimize'):
-            return self.__minimize
-        return False
+        if hasattr(self, '_minimize'):
+            return self._minimize
+        return True
 
 
 class BaseLoss:
@@ -92,7 +92,7 @@ class LossCompose(MinimizeFlag):
         else:
             self.main_loss = UnconditionalLoss(to_weight=to_weight)
         self.residual_loss = ResidualLoss()
-        self.__minimize = minimize
+        self._minimize = minimize
         if not self.minimize and self.residual_loss_factor:
             raise NotImplementedError('Can not maximize with residual loss')
 

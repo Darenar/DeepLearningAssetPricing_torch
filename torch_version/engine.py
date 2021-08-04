@@ -123,6 +123,9 @@ def evaluate_sharpe_from_residual_returns(returns: torch.Tensor, mask: torch.Ten
                                           residual_returns: torch.Tensor) -> float:
     returns, mask, residual_returns = to_numpy(returns, mask, residual_returns)
     predicted_returns = _get_predicted_returns(residual_returns, returns, mask)
+    if len(returns.shape) > 3:
+        returns = returns[0, :]
+    returns = returns[mask]
     portfolio = construct_long_short_portfolio(predicted_returns, returns, mask[:, :, 0])
     return sharpe(portfolio)
 
@@ -139,12 +142,10 @@ def train_model(config: Config, epochs: int, model: MODEL_TYPE,
 
     # If RNN should be used - initialize random hidden state
     train_initial_hidden_state = model.initialize_sdf_hidden_state() if config['use_rnn'] else None
-
+    sub_epochs = config['sub_epoch']
     if loss.minimize:
-        sub_epochs = config['sub_epoch']
         last_metric_value = 1e10
     else:
-        sub_epochs = 1
         last_metric_value = -1e10
 
     for epoch in range(epochs):

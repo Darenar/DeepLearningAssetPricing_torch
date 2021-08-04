@@ -47,7 +47,7 @@ def main(args):
     train_sdf, train_hidden_state = predict_normalized_sdf(gan_model, train_dataset, as_factor=True)
     val_sdf, val_hidden_state = predict_normalized_sdf(gan_model, val_dataset, train_hidden_state, as_factor=True)
     test_sdf, _ = predict_normalized_sdf(gan_model, test_dataset, val_hidden_state, as_factor=True)
-    logging.info('SDF after GAN train/val/test:', sharpe(train_sdf), sharpe(val_sdf), sharpe(test_sdf))
+    logging.info(f'SDF after GAN train/val/test: {sharpe(train_sdf)}, {sharpe(val_sdf)}, {sharpe(test_sdf)}')m
 
     logging.info("Multiply individual returns by obtained SDF vector")
     train_dataset.individual_data.multiply_returns_on_sdf(train_sdf, factor=args.sdf_factor)
