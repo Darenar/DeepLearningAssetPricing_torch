@@ -67,11 +67,11 @@ class SDFModel(FeatureExtractionModel):
 
     def forward(self, macro_features: torch.Tensor, individual_features: torch.Tensor,
                 masks: torch.Tensor, returns_tensor: torch.Tensor, hidden_state: HIDDEN_STATE_TYPE, *args, **kwargs):
-        weights = self.extract_features(macro_features, individual_features, masks, hidden_state)
+        sdf_weights = self.extract_features(macro_features, individual_features, masks, hidden_state)
         returns_masked = torch.masked_select(returns_tensor, masks).reshape(
                 (1, torch.sum(masks), returns_tensor.shape[-1]))
 
-        weighted_returns = returns_masked * weights
+        weighted_returns = returns_masked * sdf_weights
 
         num_val_per_time = torch.sum(torch.squeeze(masks, -1), dim=1)
         weighted_returns_split = torch.split(torch.squeeze(weighted_returns, 0), num_val_per_time.tolist())
@@ -84,16 +84,16 @@ class SDFModel(FeatureExtractionModel):
             sum_of_returns_per_time = sum_of_returns_per_time / num_val_per_time * mean_num_val_per_time
 
         sdf = sum_of_returns_per_time + 1
-        return sdf, weights
+        return sdf, sdf_weights
 
 
 class MomentsModel(FeatureExtractionModel):
     SUFFIX = 'moment'
 
     def forward(self, macro_features: torch.Tensor, individual_features: torch.Tensor, *args, **kwargs):
-        weights = self.extract_features(macro_features, individual_features, masks=None)
-        weights = weights.permute((0, 3, 1, 2))
-        return weights
+        moments = self.extract_features(macro_features, individual_features, masks=None)
+        moments = moments.permute((0, 3, 1, 2))
+        return moments
 
 
 class ReturnsModel(FeatureExtractionModel):
@@ -117,6 +117,9 @@ class ReturnsModel(FeatureExtractionModel):
             return self.recurrent_net.last_hidden_state
         return None
 
+    def trainable_params(self):
+        return self.parameters()
+
 
 class GANModel(torch.nn.Module):
     def __init__(self, config: Config, input_dropout: float = 0., output_dropout: float = 0.,
@@ -135,12 +138,13 @@ class GANModel(torch.nn.Module):
         self.moment_net = MomentsModel(
             output_size=config.num_condition_moment,
             output_activation=moment_output_activation, **model_params)
+        self._trainable_params = self.parameters()
 
     def forward(self, macro_features: torch.Tensor, individual_features: torch.Tensor,
                 masks: torch.Tensor, returns_tensor: torch.Tensor, hidden_state: HIDDEN_STATE_TYPE, *args, **kwargs):
-        sdf, weights = self.sdf_net(macro_features, individual_features, masks, returns_tensor, hidden_state)
-        hidden_weights = self.moment_net(macro_features, individual_features)
-        return sdf, weights, hidden_weights
+        sdf, sdf_weights = self.sdf_net(macro_features, individual_features, masks, returns_tensor, hidden_state)
+        moments = self.moment_net(macro_features, individual_features)
+        return sdf, sdf_weights, moments
 
     @try_to_cuda
     def initialize_sdf_hidden_state(self) -> Optional[torch.Tensor]:
@@ -158,12 +162,17 @@ class GANModel(torch.nn.Module):
             param.requires_grad = False
         for param in self.moment_net.parameters():
             param.requires_grad = True
+            self._trainable_params = self.moment_net.parameters()
 
     def froze_moment_net(self):
         for param in self.sdf_net.parameters():
             param.requires_grad = True
+            self._trainable_params = self.sdf_net.parameters()
         for param in self.moment_net.parameters():
             param.requires_grad = False
+
+    def trainable_params(self):
+        return self._trainable_params
 
 
 

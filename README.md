@@ -35,7 +35,10 @@ python run_torch.py --help
 
 # Results
 Script stores model dumps and logging file in the folder with path given by ```--path_to_output``` option.
+
 In the end of the logging file one could find calculated statistics (Explained Variation, XS-R2, Weighted XS-R2) for each dataset.
+
+
 To calculate statistics on the given datasets and pretrained model run the following script:
 ```
 python calculate_statistics.py
@@ -44,10 +47,21 @@ The results from this implementation are the following:
 
 | Dataset | Explained Variation | XS-R2 | Weighted XS-R2 |
 | --- | ----------- | -----| ------ |
-| Train | 0.089 | 0.035 | 0.154 |
-| Validation | 0.011 | -0.004 | -0.015 |
-| Test | 0.015 | 0.004 | 0.032 |
+| Train | 0.12 | 0.024 | 0.16 |
+| Validation | 0.05 | 0.028 | 0.016 |
+| Test | 0.04 | 0.05 | 0.186 |
 
+
+Those are the results from original TensorFlow implementation:
+
+| Dataset | Explained Variation | XS-R2 | Weighted XS-R2 |
+| --- | ----------- | -----| ------ |
+| Train | 0.17 | -0.03 | 0.15 | 
+| Validation | 0.08 | 0.03 | -0.01 |
+| Test | 0.07 | 0.04 | 0.20 |
+
+NOTE: Different weights initialization in PyTorch model affects the resulting metrics. 
+Take this into account in your own experiments.   
 
 
 # GPU support

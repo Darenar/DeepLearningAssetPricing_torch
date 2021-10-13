@@ -16,15 +16,15 @@ class BaseLoss:
         self.to_weight = to_weight
 
     def _calculate_loss(self, returns_tensor: torch.Tensor, masks: torch.Tensor,
-                        sdf: torch.Tensor, hidden_weights: Optional[torch.Tensor] = None, *args, **kwargs):
+                        sdf: torch.Tensor, moments: Optional[torch.Tensor] = None, *args, **kwargs):
         weights = self.get_weights_from_mask(masks)
         if len(returns_tensor.shape) > 3:
             returns_tensor = torch.squeeze(returns_tensor, 0)
         multiplied_tensor = (torch.squeeze(returns_tensor * masks, -1) * sdf)
-        if hidden_weights is not None:
-            if len(hidden_weights.shape) > 3:
-                hidden_weights = torch.squeeze(hidden_weights, 0)
-            multiplied_tensor = hidden_weights * multiplied_tensor
+        if moments is not None:
+            if len(moments.shape) > 3:
+                moments = torch.squeeze(moments, 0)
+            multiplied_tensor = moments * multiplied_tensor
         else:
             multiplied_tensor = torch.unsqueeze(multiplied_tensor, 0)
         empirical_mean = torch.div(torch.sum(multiplied_tensor, dim=1), weights)
@@ -55,8 +55,8 @@ class UnconditionalLoss(BaseLoss):
 
 class ConditionalLoss(BaseLoss):
     def __call__(self, returns_tensor: torch.Tensor, masks: torch.Tensor,
-                 sdf: torch.Tensor, hidden_weights: torch.Tensor, *args, **kwargs):
-        return self._calculate_loss(returns_tensor, masks, sdf, hidden_weights)
+                 sdf: torch.Tensor, moments: torch.Tensor, *args, **kwargs):
+        return self._calculate_loss(returns_tensor, masks, sdf, moments)
 
 
 class WeightedLSLoss(BaseLoss, MinimizeFlag):
@@ -66,16 +66,16 @@ class WeightedLSLoss(BaseLoss, MinimizeFlag):
 
 
 class ResidualLoss:
-    def __call__(self, returns_tensor: torch.Tensor, masks: torch.Tensor, weights: torch.Tensor, *args, **kwargs):
+    def __call__(self, returns_tensor: torch.Tensor, masks: torch.Tensor, sdf_weights: torch.Tensor, *args, **kwargs):
         num_val_per_time = torch.sum(torch.squeeze(masks, -1), dim=1)
         returns_masked = torch.masked_select(returns_tensor, masks).reshape(
             (torch.sum(masks), returns_tensor.shape[-1]))
-        weights = torch.squeeze(weights, 0)
+        sdf_weights = torch.squeeze(sdf_weights, 0)
         returns_split = torch.split(returns_masked, num_val_per_time.tolist())
-        weights_split = torch.split(weights, num_val_per_time.tolist())
+        sdf_weights_split = torch.split(sdf_weights, num_val_per_time.tolist())
         residual_square_list = list()
         r_square_list = list()
-        for r_t, w_t in zip(returns_split, weights_split):
+        for r_t, w_t in zip(returns_split, sdf_weights_split):
             r_t_hat = torch.sum(r_t * w_t) / torch.sum(w_t * w_t) * w_t
             residual_square_list.append(torch.mean(torch.square(r_t - r_t_hat)))
             r_square_list.append(torch.mean(torch.square(r_t)))
@@ -97,13 +97,13 @@ class LossCompose(MinimizeFlag):
             raise NotImplementedError('Can not maximize with residual loss')
 
     def __call__(self, returns_tensor: torch.Tensor, masks: torch.Tensor, sdf: torch.Tensor,
-                 weights: torch.Tensor = None, hidden_weights: Optional[torch.Tensor] = None, *args, **kwargs):
+                 sdf_weights: torch.Tensor = None, moments: Optional[torch.Tensor] = None, *args, **kwargs):
         main_loss_factor = 1 if self.minimize else -1
         loss = main_loss_factor * self.main_loss(
             returns_tensor=returns_tensor,
             masks=masks,
             sdf=sdf,
-            hidden_weights=hidden_weights)
+            moments=moments)
         if self.residual_loss_factor:
-            loss += self.residual_loss(returns_tensor, masks, weights) * self.residual_loss_factor
+            loss += self.residual_loss(returns_tensor, masks, sdf_weights) * self.residual_loss_factor
         return loss

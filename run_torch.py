@@ -42,12 +42,13 @@ def main(args):
                           path_to_dump=args.path_to_output,
                           dataset_train=train_dataset,
                           dataset_valid=val_dataset,
-                          dataset_test=test_dataset)
+                          dataset_test=test_dataset,
+                          norm_std=args.init_norm_std)
     logging.info("Predict normalized SDF values with trained GAN model")
     train_sdf, train_hidden_state = predict_normalized_sdf(gan_model, train_dataset, as_factor=True)
     val_sdf, val_hidden_state = predict_normalized_sdf(gan_model, val_dataset, train_hidden_state, as_factor=True)
     test_sdf, _ = predict_normalized_sdf(gan_model, test_dataset, val_hidden_state, as_factor=True)
-    logging.info(f'SDF after GAN train/val/test: {sharpe(train_sdf)}, {sharpe(val_sdf)}, {sharpe(test_sdf)}')m
+    logging.info(f'SDF after GAN train/val/test: {sharpe(train_sdf)}, {sharpe(val_sdf)}, {sharpe(test_sdf)}')
 
     logging.info("Multiply individual returns by obtained SDF vector")
     train_dataset.individual_data.multiply_returns_on_sdf(train_sdf, factor=args.sdf_factor)
@@ -64,7 +65,8 @@ def main(args):
                                         path_to_dump=args.path_to_output,
                                         dataset_train=train_dataset,
                                         dataset_valid=val_dataset,
-                                        dataset_test=test_dataset)
+                                        dataset_test=test_dataset,
+                                        norm_std=args.init_norm_std)
     logging.info("Predicting returns with trained Returns Model on original data")
     train_dataset = FinanceDataset.from_config(config)
     val_dataset = FinanceDataset.from_config(config, suffix='valid')
@@ -84,6 +86,8 @@ if __name__ == '__main__':
     parser.add_argument('--path_to_rf_config', default=PATH_TO_RETURNS_CONFIG, help='Path to rf config file.')
     parser.add_argument('--path_to_output', default='torch_output', help='Path to output folder')
     parser.add_argument('--sdf_factor', default=50, help='Value by which to increase obtained SDF values.')
+    parser.add_argument('--init_norm_std', default=0.05, help='Std value by which to initialize tensors. '
+                                                              'Appeared to be valuable for model performance.')
     args = parser.parse_args()
     os.makedirs(args.path_to_output, exist_ok=True)
     main(args)
